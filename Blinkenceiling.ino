@@ -19,7 +19,9 @@ bool oldMovement;
 volatile enum {
   idle = 0,
   standard,
-  obmode
+  standardOut,
+  obmode,
+  obmodeOut
 } displayState;
 volatile bool stateChanged;
 uint8_t rainbowState;
@@ -27,21 +29,31 @@ uint8_t rainbowState;
 SimpleTimer timer;
 int timeout_id;
 int obmode_id;
+bool movementActive;
+
+bool standardOut_flashState;
+int standardOut_flashTimer;
+
+bool obOut_flashState;
+int obOut_flashTimer;
 
 void setup() {
+#ifdef DEBUG
+  Serial.begin(9600);
+  Serial.println("Startup!");
+#endif
   pinMode(LEDPIN, OUTPUT);
-  pinMode(PIRPIN, INPUT);
+  pinMode(PIRPIN, INPUT_PULLUP);
   pinMode(BUTTONPIN, INPUT_PULLUP);
   stateChanged = true;
   if(digitalRead(PIRPIN)) {
     displayState = standard;
+    movementActive = true;
   } else {
     displayState = idle;
+    movementActive = false;
   }
   
-  timeout_id = -1;
-  obmode_id = -1;
-    
   attachInterrupt(0, pirChange, CHANGE);
   attachInterrupt(1, buttonPressed, RISING);
   
@@ -56,40 +68,97 @@ void pirChange() {
   digitalWrite(LEDPIN, val);
   
   if(val == 0) {
-    timeout_id = timer.setTimeout(2*60*1000, timeoutCallback);
-  } else if(timeout_id != -1) {
-    if(displayState == idle) {
+    timeout_id = timer.setTimeout(2*60*100, timeoutCallback);
+  } else if(!movementActive) {
+    if(displayState == idle || displayState == standardOut) {
       stateChanged = true;
       displayState = standard;
+      if(displayState == standardOut) {
+        timer.deleteTimer(standardOut_flashTimer);
+      }
     }
-    timer.disable(timeout_id);
     timer.deleteTimer(timeout_id);
-    timeout_id = -1;
+    movementActive = true;
   }
 }
 
 void buttonPressed() {
-  if(obmode_id != -1) {
+#ifdef DEBUG
+  Serial.println("button pressed");
+#endif
+  if(displayState == obmode) {
+#ifdef DEBUG
+    Serial.println("prolong ob timeout");
+#endif
     // prolong timer
     timer.restartTimer(obmode_id);
   } else {
+    if(displayState == obmodeOut) {
+      Serial.println("display state was ob mode out");
+      timer.deleteTimer(obOut_flashTimer);
+      timer.deleteTimer(obmode_id);
+    }
     stateChanged = true;
     displayState = obmode;
-    obmode_id = timer.setTimeout(3*60*1000, obTimeoutCallback);
+    obmode_id = timer.setTimeout(3*60*100, obTimeoutCallback);
+#ifdef DEBUG
+    Serial.println("initialized ob timeout");
+#endif
   }
 }
 
 void timeoutCallback() {
-  timeout_id = -1;
   if(displayState == standard) {
-    displayState = idle;
+    displayState = standardOut;
     stateChanged = true;
+    
+    standardOut_flashState = false;
+    standardOut_flashTimer = timer.setInterval(200, standardOut_flash);
+    timeout_id = timer.setTimeout(3000, out_timeoutCallback);
+  } else {
+    movementActive = false;
   }
 }
 
+void standardOut_flash() {
+  if(displayState == standardOut) {
+    if(!standardOut_flashState) {
+      colorWipe(strip.Color(255, 0, 0));
+    } else {
+      colorWipe(strip.Color(10, 10, 10));
+    }
+    standardOut_flashState = !standardOut_flashState;
+  }
+}
+
+void out_timeoutCallback() {
+  timer.deleteTimer(standardOut_flashTimer);
+  if(displayState == standardOut) {
+    displayState = idle;
+    stateChanged = true;
+  }
+  movementActive = false;
+}
+
 void obTimeoutCallback() {
-  obmode_id = -1;
-  if(timeout_id != -1 || digitalRead(PIRPIN)) {
+#ifdef DEBUG
+  Serial.println("ob timeout");
+#endif
+  displayState = obmodeOut;
+  stateChanged = true;
+  obmode_id = timer.setTimeout(3000, obOutTimeoutCallback);
+  
+  obOut_flashState = false;
+  obOut_flashTimer = timer.setInterval(200, obOut_flash);
+}
+
+void obOutTimeoutCallback() {
+#ifdef DEBUG
+  Serial.println("ob out timeout");
+#endif
+  timer.disable(obOut_flashTimer);
+  timer.deleteTimer(obOut_flashTimer);
+  if(movementActive) {
     displayState = standard;
   } else {
     displayState = idle;
@@ -97,7 +166,22 @@ void obTimeoutCallback() {
   stateChanged = true;
 }
 
+void obOut_flash() {
+#ifdef DEBUG
+  Serial.println("ob out flash");
+#endif
+  if(displayState == obmodeOut) {
+    if(!obOut_flashState) {
+      colorWipe(strip.Color(255, 0, 0));
+    } else {
+      colorWipe(strip.Color(/*255, 255, 255*/100,100,100));
+    }
+    obOut_flashState = !obOut_flashState;
+  }
+}
+
 void loop() {
+  timer.run();
   // do this atomically to avoid interrupt issues
   uint8_t saveSREG = SREG;
   cli();
@@ -109,14 +193,13 @@ void loop() {
     if(displayState == idle) {
       colorWipe(strip.Color(10, 10, 10));
     } else if(displayState == obmode) {
-      colorWipe(strip.Color(200, 200, 200));
+      colorWipe(strip.Color(/*255, 255, 255*/100,100,100));
     }
   }
   if(displayState == standard) {
       rainbowCycle();
 //      delay(20);
   }
-  timer.run();
 }
 
 void colorWipe(uint32_t c) {
