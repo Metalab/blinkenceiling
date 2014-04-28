@@ -15,6 +15,8 @@
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(162, PIN, NEO_GRB + NEO_KHZ800);
 
+//#define DEBUG
+
 bool oldMovement;
 volatile enum {
   idle = 0,
@@ -46,16 +48,8 @@ void setup() {
   pinMode(PIRPIN, INPUT_PULLUP);
   pinMode(BUTTONPIN, INPUT_PULLUP);
   stateChanged = true;
-  if(digitalRead(PIRPIN)) {
-    displayState = standard;
-    movementActive = true;
-  } else {
-    displayState = idle;
-    movementActive = false;
-  }
-  
-  attachInterrupt(0, pirChange, CHANGE);
-  attachInterrupt(1, buttonPressed, RISING);
+  displayState = idle;
+  movementActive = false;
   
   rainbowState = 0;
 
@@ -63,22 +57,34 @@ void setup() {
   strip.show(); // Initialize all pixels to 'off'
 }
 
-void pirChange() {
-  int val = digitalRead(PIRPIN);
+void pirChange(int val) {
+#ifdef DEBUG
+  if(val) {
+    Serial.println("pir on");
+  } else {
+    Serial.println("pir off");
+  }
+#endif
   digitalWrite(LEDPIN, val);
   
   if(val == 0) {
     timeout_id = timer.setTimeout(2*60*100, timeoutCallback);
-  } else if(!movementActive) {
+  } else {
     if(displayState == idle || displayState == standardOut) {
-      stateChanged = true;
-      displayState = standard;
       if(displayState == standardOut) {
         timer.deleteTimer(standardOut_flashTimer);
       }
+      stateChanged = true;
+      displayState = standard;
     }
-    timer.deleteTimer(timeout_id);
+    if(timeout_id != -1) {
+      timer.deleteTimer(timeout_id);
+      timeout_id = -1;
+    }
     movementActive = true;
+#ifdef DEBUG
+    Serial.println("movementActive = true");
+#endif
   }
 }
 
@@ -94,13 +100,23 @@ void buttonPressed() {
     timer.restartTimer(obmode_id);
   } else {
     if(displayState == obmodeOut) {
+#ifdef DEBUG
       Serial.println("display state was ob mode out");
+#endif
       timer.deleteTimer(obOut_flashTimer);
       timer.deleteTimer(obmode_id);
+    } else if(displayState == standardOut) {
+#ifdef DEBUG
+      Serial.println("display state was standard out");
+#endif
+      timer.deleteTimer(standardOut_flashTimer);
+      timer.deleteTimer(timeout_id);
+      timeout_id = -1;
+      movementActive = false;
     }
     stateChanged = true;
     displayState = obmode;
-    obmode_id = timer.setTimeout(3*60*100, obTimeoutCallback);
+    obmode_id = timer.setTimeout(3*60*10, obTimeoutCallback);
 #ifdef DEBUG
     Serial.println("initialized ob timeout");
 #endif
@@ -108,36 +124,50 @@ void buttonPressed() {
 }
 
 void timeoutCallback() {
+#ifdef DEBUG
+    Serial.println("timeoutCallback");
+#endif
   if(displayState == standard) {
     displayState = standardOut;
     stateChanged = true;
     
     standardOut_flashState = false;
     standardOut_flashTimer = timer.setInterval(200, standardOut_flash);
-    timeout_id = timer.setTimeout(3000, out_timeoutCallback);
+    timeout_id = timer.setTimeout(3013, out_timeoutCallback); // do not use multiples of the interval above, this seems to trigger a bug in the timer library!
   } else {
     movementActive = false;
+#ifdef DEBUG
+    Serial.println("movementActive = false");
+#endif
   }
 }
 
 void standardOut_flash() {
-  if(displayState == standardOut) {
-    if(!standardOut_flashState) {
-      colorWipe(strip.Color(255, 0, 0));
-    } else {
-      colorWipe(strip.Color(10, 10, 10));
-    }
-    standardOut_flashState = !standardOut_flashState;
+#ifdef DEBUG
+    Serial.println("standardOut_flash");
+#endif
+  if(!standardOut_flashState) {
+    colorWipe(strip.Color(255, 0, 0));
+  } else {
+    colorWipe(strip.Color(10, 10, 10));
   }
+  standardOut_flashState = !standardOut_flashState;
 }
 
 void out_timeoutCallback() {
+#ifdef DEBUG
+    Serial.println("out_timeoutCallback");
+#endif
   timer.deleteTimer(standardOut_flashTimer);
   if(displayState == standardOut) {
     displayState = idle;
     stateChanged = true;
   }
   movementActive = false;
+  timeout_id = -1;
+#ifdef DEBUG
+    Serial.println("movementActive = false");
+#endif
 }
 
 void obTimeoutCallback() {
@@ -146,7 +176,7 @@ void obTimeoutCallback() {
 #endif
   displayState = obmodeOut;
   stateChanged = true;
-  obmode_id = timer.setTimeout(3000, obOutTimeoutCallback);
+  obmode_id = timer.setTimeout(3013, obOutTimeoutCallback); // do not use multiples of the interval set below, this seems to trigger a bug in the timer library!
   
   obOut_flashState = false;
   obOut_flashTimer = timer.setInterval(200, obOut_flash);
@@ -170,26 +200,28 @@ void obOut_flash() {
 #ifdef DEBUG
   Serial.println("ob out flash");
 #endif
-  if(displayState == obmodeOut) {
-    if(!obOut_flashState) {
-      colorWipe(strip.Color(255, 0, 0));
-    } else {
-      colorWipe(strip.Color(/*255, 255, 255*/100,100,100));
-    }
-    obOut_flashState = !obOut_flashState;
+  if(!obOut_flashState) {
+    colorWipe(strip.Color(255, 0, 0));
+  } else {
+    colorWipe(strip.Color(/*255, 255, 255*/100,100,100));
   }
+  obOut_flashState = !obOut_flashState;
 }
+
+int pirState = -1;
 
 void loop() {
   timer.run();
-  // do this atomically to avoid interrupt issues
-  uint8_t saveSREG = SREG;
-  cli();
-  volatile bool localStateChanged = stateChanged;
-  stateChanged = false;
-  SREG = saveSREG;
+  if(digitalRead(BUTTONPIN)) {
+    buttonPressed();
+  }
+  int pirPin = digitalRead(PIRPIN);
+  if(pirState != pirPin) {
+    pirChange(pirPin);
+    pirState = pirPin;
+  }
   
-  if(localStateChanged) {
+  if(stateChanged) {
     if(displayState == idle) {
       colorWipe(strip.Color(10, 10, 10));
     } else if(displayState == obmode) {
