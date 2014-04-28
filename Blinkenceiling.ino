@@ -68,7 +68,7 @@ void pirChange(int val) {
   digitalWrite(LEDPIN, val);
   
   if(val == 0) {
-    timeout_id = timer.setTimeout(2*60*100, timeoutCallback);
+    timeout_id = timer.setTimeout(30*1000, timeoutCallback);
   } else {
     if(displayState == idle || displayState == standardOut) {
       if(displayState == standardOut) {
@@ -116,7 +116,7 @@ void buttonPressed() {
     }
     stateChanged = true;
     displayState = obmode;
-    obmode_id = timer.setTimeout(3*60*10, obTimeoutCallback);
+    obmode_id = timer.setTimeout(30*1000, obTimeoutCallback);
 #ifdef DEBUG
     Serial.println("initialized ob timeout");
 #endif
@@ -203,7 +203,7 @@ void obOut_flash() {
   if(!obOut_flashState) {
     colorWipe(strip.Color(255, 0, 0));
   } else {
-    colorWipe(strip.Color(/*255, 255, 255*/100,100,100));
+    colorWipe(strip.Color(255, 255, 255));
   }
   obOut_flashState = !obOut_flashState;
 }
@@ -225,7 +225,7 @@ void loop() {
     if(displayState == idle) {
       colorWipe(strip.Color(10, 10, 10));
     } else if(displayState == obmode) {
-      colorWipe(strip.Color(/*255, 255, 255*/100,100,100));
+      colorWipe(strip.Color(255, 255, 255));
     }
   }
   if(displayState == standard) {
