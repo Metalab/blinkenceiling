@@ -4,6 +4,7 @@
 #define PIN A3
 #define PIRPIN 2
 #define BUTTONPIN 3
+#define DOORPIN 4
 #define LEDPIN 13
 
 // Parameter 1 = number of pixels in strip
@@ -47,6 +48,7 @@ void setup() {
   pinMode(LEDPIN, OUTPUT);
   pinMode(PIRPIN, INPUT_PULLUP);
   pinMode(BUTTONPIN, INPUT_PULLUP);
+  pinMode(DOORPIN, INPUT);//external pull-up on the BigPoopData board
   stateChanged = true;
   displayState = idle;
   movementActive = false;
@@ -215,7 +217,7 @@ void loop() {
   if(digitalRead(BUTTONPIN)) {
     buttonPressed();
   }
-  int pirPin = digitalRead(PIRPIN);
+  int pirPin = digitalRead(PIRPIN) || !digitalRead(DOORPIN);
   if(pirState != pirPin) {
     pirChange(pirPin);
     pirState = pirPin;
