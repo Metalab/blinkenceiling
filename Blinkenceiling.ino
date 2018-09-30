@@ -48,7 +48,7 @@ void setup() {
   pinMode(LEDPIN, OUTPUT);
   pinMode(PIRPIN, INPUT_PULLUP);
   pinMode(BUTTONPIN, INPUT_PULLUP);
-  pinMode(DOORPIN, INPUT);//external pull-up on the BigPoopData board
+  pinMode(DOORPIN, INPUT);//external pull-down on the BigPoopData board
   stateChanged = true;
   displayState = idle;
   movementActive = false;
@@ -217,7 +217,7 @@ void loop() {
   if(digitalRead(BUTTONPIN)) {
     buttonPressed();
   }
-  int pirPin = digitalRead(PIRPIN) || !digitalRead(DOORPIN);
+  int pirPin = digitalRead(PIRPIN) || digitalRead(DOORPIN);
   if(pirState != pirPin) {
     pirChange(pirPin);
     pirState = pirPin;
